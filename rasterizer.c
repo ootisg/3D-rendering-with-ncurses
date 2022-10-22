@@ -1,7 +1,10 @@
 #include <ncurses.h>
 #include <math.h>
+#include <stdlib.h>
 
-void draw_line (int x1, int y1, int x2, int y2) {
+#include "rasterizer.h"
+
+void draw_line (int x1, int y1, int x2, int y2, int* line_raster_buffer) {
 
 	//Flip start and end if in q3,q4
 	if (y1 > y2 || (y1 == y2 && x2 < x1 /*For the record, I'm very mad that I had to special-case this*/)) {
@@ -34,9 +37,14 @@ void draw_line (int x1, int y1, int x2, int y2) {
 
 	do {
 
-		//Put current char
-		move (curr_y, curr_x);
-		addch ('#');
+		//Add to raster buffer
+		if (line_raster_buffer[curr_y * 2] == 0) {
+			line_raster_buffer[curr_y * 2] = curr_x;
+       		} else {
+			line_raster_buffer[curr_y * 2 + 1] = curr_x;
+		}
+		//move (curr_y, curr_x);
+		//addch ('#');
 
 		//Calculate next pos
 		if (m < 0 || q3) {
@@ -66,6 +74,34 @@ void draw_line (int x1, int y1, int x2, int y2) {
 
 }
 
+void draw_tri (tri* triangle) {
+
+	float verts[] = {5, 5, 4, 12, 4, 12, 53, 2, 53, 2, 5, 5};
+	int i;
+	int* raster_buffer = malloc (sizeof (int) * 160 * 2);
+	for (i = 0; i < 3; i++) {
+		vertex v_from = (i == 0 ? triangle->a : (i == 1 ? triangle->b : triangle->c));
+		vertex v_to = (i == 0 ? triangle->b : (i == 1 ? triangle->c : triangle->a));
+		draw_line (v_from.x, v_from.y, v_to.x, v_to.y, raster_buffer);
+	}
+	for (i = 2; i <= 12; i++) {
+		int a = raster_buffer[i * 2];
+		int b = raster_buffer[i * 2 + 1];
+		if (a > b) {
+			int temp = a;
+			a = b;
+			b = temp;
+		}
+		int wx;
+		for (wx = a; wx <= b; wx++) {
+			move (i, wx);
+			addch ('#');
+		}
+	}
+	free (raster_buffer);
+
+}
+
 int main () {
 
 	//Init curses
@@ -74,17 +110,14 @@ int main () {
 	noecho ();
 
 	//Uhh
-	float theta;
-	for (theta = 0; theta < M_PI * 2; theta += M_PI / 360) {
-		clear ();
-		float center_x = 115;
-		float center_y = 30;
-		float offs_x = cos (theta) * 20;
-		float offs_y = sin (theta) * 20;
-		draw_line (center_x, center_y, center_x + offs_x, center_y + offs_y);
-		getch ();
-		refresh ();
-	}
+	tri t;
+	t.a.x = 5;
+	t.a.y = 5;
+	t.b.x = 4;
+	t.b.y = 12;
+	t.c.x = 53;
+	t.c.y = 2;
+	draw_tri (&t);
 
 	//Wait and end
 	getch ();
