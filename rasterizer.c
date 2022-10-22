@@ -76,17 +76,48 @@ void draw_line (int x1, int y1, int x2, int y2, int* line_raster_buffer) {
 
 void draw_tri (tri* triangle) {
 
-	float verts[] = {5, 5, 4, 12, 4, 12, 53, 2, 53, 2, 5, 5};
+	//Calculate screen coords
+	int max_x, max_y;
+	getmaxyx (stdscr, max_y, max_x);
+
+	//Compute the top and bottom y
+	float vals[3];
+	vals[0] = triangle->a.y;
+	vals[1] = triangle->b.y;
+	vals[2] = triangle->c.y;
+	//Inline bubble sort
+	int temp;
+	if (vals[0] > vals[1]) {
+		temp = vals[0];
+		vals[0] = vals[1];
+		vals[1] = temp;
+	}
+	if (vals[1] > vals[2]) {
+		temp = vals[1];
+		vals[1] = vals[2];
+		vals[2] = temp;
+	}
+	if (vals[0] > vals[1]) {
+		temp = vals[0];
+		vals[0] = vals[1];
+		vals[1] = temp;
+	}
+	int tri_min_y = ((vals[0] + 1) / 2) * max_y;
+	int tri_max_y = ((vals[2] + 1) / 2) * max_y;
+
 	int i;
-	int* raster_buffer = malloc (sizeof (int) * 160 * 2);
+	int* raster_buffer = malloc (sizeof (int) * max_y * 2);
 	for (i = 0; i < 3; i++) {
 		vertex v_from = (i == 0 ? triangle->a : (i == 1 ? triangle->b : triangle->c));
 		vertex v_to = (i == 0 ? triangle->b : (i == 1 ? triangle->c : triangle->a));
-		draw_line (v_from.x, v_from.y, v_to.x, v_to.y, raster_buffer);
+		draw_line (((v_from.x + 1) / 2) * max_x, ((v_from.y + 1) / 2) * max_y, ((v_to.x + 1) / 2) * max_x, ((v_to.y + 1) / 2) * max_y, raster_buffer);
 	}
-	for (i = 2; i <= 12; i++) {
+	for (i = tri_min_y; i <= tri_max_y; i++) {
 		int a = raster_buffer[i * 2];
 		int b = raster_buffer[i * 2 + 1];
+		if (b == 0) {
+			b = a;
+		}
 		if (a > b) {
 			int temp = a;
 			a = b;
@@ -94,7 +125,7 @@ void draw_tri (tri* triangle) {
 		}
 		int wx;
 		for (wx = a; wx <= b; wx++) {
-			move (i, wx);
+			move (max_y - i, wx);
 			addch ('#');
 		}
 	}
@@ -111,12 +142,12 @@ int main () {
 
 	//Uhh
 	tri t;
-	t.a.x = 5;
-	t.a.y = 5;
-	t.b.x = 4;
-	t.b.y = 12;
-	t.c.x = 53;
-	t.c.y = 2;
+	t.a.x = 0;
+	t.a.y = -0.5;
+	t.b.x = -0.5;
+	t.b.y = 0.5;
+	t.c.x = 0.5;
+	t.c.y = 0.5;
 	draw_tri (&t);
 
 	//Wait and end
