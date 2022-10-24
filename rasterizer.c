@@ -40,8 +40,13 @@ void draw_line (int x1, int y1, int x2, int y2, int* line_raster_buffer) {
 		//Add to raster buffer
 		if (line_raster_buffer[curr_y * 2] == 0) {
 			line_raster_buffer[curr_y * 2] = curr_x;
+			line_raster_buffer[curr_y * 2] = curr_x; //First and last are identical for the first point
        		} else {
-			line_raster_buffer[curr_y * 2 + 1] = curr_x;
+			if (curr_x < line_raster_buffer[curr_y * 2]) {
+				line_raster_buffer[curr_y * 2] = curr_x; //First element is the minimum
+			} else if (curr_x > line_raster_buffer[curr_y * 2 + 1]) {
+				line_raster_buffer[curr_y * 2 + 1] = curr_x; //Second element is the maximum
+			}
 		}
 		//move (curr_y, curr_x);
 		//addch ('#');
@@ -115,14 +120,6 @@ void draw_tri (tri* triangle) {
 	for (i = tri_min_y; i <= tri_max_y; i++) {
 		int a = raster_buffer[i * 2];
 		int b = raster_buffer[i * 2 + 1];
-		if (b == 0) {
-			b = a;
-		}
-		if (a > b) {
-			int temp = a;
-			a = b;
-			b = temp;
-		}
 		int wx;
 		for (wx = a; wx <= b; wx++) {
 			move (max_y - i, wx);
