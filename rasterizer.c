@@ -3,79 +3,82 @@
 #include <stdlib.h>
 
 #include "rasterizer.h"
-
+	
 void draw_line (int x1, int y1, int x2, int y2, int* line_raster_buffer) {
 
-	//Flip start and end if in q3,q4
-	if (y1 > y2 || (y1 == y2 && x2 < x1 /*For the record, I'm very mad that I had to special-case this*/)) {
-		int temp;
-		temp = x2;
-		x2 = x1;
-		x1 = temp;
-		temp = y2;
-		y2 = y1;
-		y1 = temp;
+	//Breensham's line drawing algorithm
+	int curr_x = x1 * 2 + 1;
+	int curr_y = y1 * 2 + 1;
+	int step_x;
+	int step_y;
+	int* indep_axis;
+	int* dep_axis;
+	int* step_indep;
+	int* step_dep;
+	int num_steps;
+	int numerator;
+	int denominator;
+
+	if (x1 < x2) {
+		step_x = 2;
+	} else {
+		step_x = -2;
+	}
+	if (y1 < y2) {
+		step_y = 2;
+	} else {
+		step_y = -2;
 	}
 
-	//Breensham's line drawing algorithm (unoptimized)
-	int curr_x = x1;
-	int curr_y = y1;
-	float curr_err = 0;
-	float m = (float)(y2 - y1) / (x2 - x1); //TODO this might trap
-
-	//Slope manip
-	int* indep_axis = &curr_x;
-	int* dep_axis = &curr_y;
-	int indep_max = x2;
-	int q3 = m < -1 ? 1 : 0; //Special case for octants 3 and 7
-	if (m > 1 || m < -1 || x1 - x2 == 0) { //Swap x and y for octants 2, 3, 6, and 7, or if the slope is vertical.
-		m = 1 / m; //Correct the slope by inverting
-		indep_axis = &curr_y;
-		dep_axis = &curr_x; //Swap the independent and dependent axes
-		indep_max = y2; //Change the indep limit to y rather than x. This always works because y1 is guaranteed to be less than y2.
+	//Compute slope and set up axis increments
+	float m;
+	if ((x1 - x2) == 0 || abs (y1 - y2) > abs (x1 - x2)) {
+		numerator = abs (x1 - x2);
+		denominator = abs (y1 - y2);
+	       	indep_axis = &curr_y;
+		dep_axis = &curr_x;
+		step_indep = &step_y;
+		step_dep = &step_x;
+		num_steps = abs (y1 - y2) + 1;
+	} else {
+		numerator = fabs (y1 - y2);
+		denominator = fabs (x1 - x2);
+		indep_axis = &curr_x;
+		dep_axis = &curr_y;
+		step_indep = &step_x;
+		step_dep = &step_y;
+		num_steps = abs (x1 - x2) + 1;
 	}
-
-	do {
-
+	
+	//Line drawing
+	int i;
+	float err = 0;
+	for (i = 0; i < num_steps; i++) {
+		
+		int raster_x = (curr_x/2);
+		int raster_y = (curr_y/2);
 		//Add to raster buffer
-		if (line_raster_buffer[curr_y * 2] == 0) {
-			line_raster_buffer[curr_y * 2] = curr_x;
-			line_raster_buffer[curr_y * 2] = curr_x; //First and last are identical for the first point
+		if (line_raster_buffer[raster_y * 2] == 0) {
+			line_raster_buffer[raster_y * 2] = raster_x;
+			line_raster_buffer[raster_y * 2 + 1] = raster_x; //First and last are identical for the first point
        		} else {
-			if (curr_x < line_raster_buffer[curr_y * 2]) {
-				line_raster_buffer[curr_y * 2] = curr_x; //First element is the minimum
-			} else if (curr_x > line_raster_buffer[curr_y * 2 + 1]) {
-				line_raster_buffer[curr_y * 2 + 1] = curr_x; //Second element is the maximum
-			}
-		}
-		//move (curr_y, curr_x);
-		//addch ('#');
-
-		//Calculate next pos
-		if (m < 0 || q3) {
-			//Octants 3, 4, 7, 8
-			curr_err -= m;
-			if (curr_err > 1) {
-				curr_err--;
-				(*dep_axis) += q3 ? -1 : 1; //Octants 3 and 7 need a special case here
-			}
-		} else {
-			//Octants 1, 2, 5, 6
-			curr_err += m;
-			if (curr_err > 1) {
-				curr_err--;
-				(*dep_axis)++;
+			if (raster_x < line_raster_buffer[raster_y * 2]){
+				line_raster_buffer[raster_y * 2] = raster_x; //First element is the minimum
+			} else if (raster_x > line_raster_buffer[raster_y * 2 + 1]) {
+				line_raster_buffer[raster_y * 2 + 1] = raster_x; //Second element is the maximum
 			}
 		}
 
-		//Increment indep_axis
-		if (m >= 0 || q3) {
-			(*indep_axis)++;
-		} else {
-			(*indep_axis)--;
+		//Move one step
+		(*indep_axis) += *step_indep;
+		err += numerator;
+		if (err >= denominator) {
+			err -= denominator;
+			(*dep_axis) += *step_dep;
 		}
 
-	} while (m >= 0 || q3 ? *indep_axis <= indep_max : *indep_axis >= indep_max);
+	}
+	
 
 }
 
@@ -91,7 +94,7 @@ void draw_tri (tri* triangle) {
 	vals[1] = triangle->b.y;
 	vals[2] = triangle->c.y;
 	//Inline bubble sort
-	int temp;
+	float temp;
 	if (vals[0] > vals[1]) {
 		temp = vals[0];
 		vals[0] = vals[1];
@@ -140,11 +143,11 @@ int main () {
 	//Uhh
 	tri t;
 	t.a.x = 0;
-	t.a.y = -0.5;
+	t.a.y = 0.5;
 	t.b.x = -0.5;
-	t.b.y = 0.5;
+	t.b.y = -0.5;
 	t.c.x = 0.5;
-	t.c.y = 0.5;
+	t.c.y = -0.5;
 	draw_tri (&t);
 
 	//Wait and end
