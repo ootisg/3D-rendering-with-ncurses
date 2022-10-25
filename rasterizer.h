@@ -1,16 +1,11 @@
 #pragma once
 
-struct vertex {
-	float x;
-	float y;
-};
-
-typedef struct vertex vertex;
+#include "vector.h"
 
 struct tri {
-	vertex a;
-	vertex b;
-	vertex c;	
+	v3 a;
+	v3 b;
+	v3 c;	
 };
 
 typedef struct tri tri;
