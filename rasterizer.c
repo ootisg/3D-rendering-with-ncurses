@@ -4,7 +4,8 @@
 
 #include "rasterizer.h"
 #include "matrix.h"
-	
+#include "tri.h"
+
 void draw_line (int x1, int y1, int x2, int y2, int* line_raster_buffer) {
 
 	//Breensham's line drawing algorithm
@@ -122,7 +123,7 @@ void draw_tri (tri* triangle, char* buffer, int width, int height) {
 		int b = raster_buffer[i * 2 + 1];
 		int wx;
 		for (wx = a; wx <= b; wx++) {
-			buffer[(height - i) * width + wx] = '#';
+			buffer[(i) * width + wx] = '#';
 		}
 	}
 	free (raster_buffer);
@@ -139,17 +140,26 @@ int main () {
 	//Init colors
 	int RGB_PAIR_START = 0;
 	int RGB_COLOR_START = 0;
+	
 	if (has_colors ()) {
 		start_color ();
 		int i;
-		int gtable[8] = {0, 125, 250, 375, 500, 625, 750, 1000};
-		int rbtable[4] = {0, 333, 666, 1000};
-		for (i = 128; i < 256; i++) {
-			int r = rbtable[(i & 0x60) >> 5];
-			int g = gtable[(i & 0x1C) >> 2];
-		       	int b = rbtable[(i & 0x03) >> 0];
-			init_color (i, r, g, b);
-			init_pair (i, i, 0);
+		int eighttable[8] = {0, 125, 250, 375, 500, 625, 750, 1000};
+		int fourtable[4] = {0, 333, 666, 1000};
+		for (i = 0; i < 256; i++) {
+			#ifdef COLOR_MODE_256
+			int r = eighttable[(i & 0xE0) >> 5];
+			int g = eighttable[(i & 0x1C) >> 2];
+		    	int b = fourtable[(i & 0x03) >> 0];
+			int index = i;
+			#else
+			int r = fourtable[(i & 0x60) >> 5];
+			int g = fourtable[(i & 0x1C) >> 2];
+			int b = fourtable[(i & 0x03) >> 0];
+			int index = i % 128 + 128;
+			#endif
+			init_color (index, r, g, b);
+			init_pair (index, i, 0);
 		}
 	} else {
 		endwin ();
@@ -169,6 +179,8 @@ int main () {
 	t.c.z = 0.0;
 	
 	//Transform triangle
+	int max_x, max_y;
+	getmaxyx (stdscr, max_y, max_x);
 	v3 origs[3];
 	origs[0] = t.a;
 	origs[1] = t.b;
@@ -176,9 +188,10 @@ int main () {
 	v3* vertices[3] = {&(t.a), &(t.b), &(t.c)};
 	mat4 scl, rot, trans, lookat, perspective;
 	matrix_trans4 (&trans, 0.0, 0.0, 3.0);
-	matrix_scale4 (&scl, 2.5, 2.5, 2.5);
+	matrix_scale4 (&scl, 1.25, 1.25, 1.25);
 	matrix_lookat (&lookat, newv3 (3.0, -2.0, 0.0), newv3 (0.0, 0.0, 3.0), newv3 (0, 1, 0));
-	matrix_perspective (&perspective, M_PI/4, 1.0, 0.1, 50);
+	double aspect = (double)max_x / max_y;
+	matrix_perspective (&perspective, M_PI/4, aspect, 0.1, 50);
 	int ang;
 	for (ang = 0; ang < 360; ang++) {
 		matrix_roty4 (&rot, (M_PI/180) * ang);
@@ -197,19 +210,48 @@ int main () {
 		}
 
 		//Draw triangle
-		int max_x, max_y;
-		getmaxyx (stdscr, max_y, max_x);
+		update_normal (&t);
 		char* screen_buffer = calloc (1, max_x * max_y);
 		draw_tri (&t, screen_buffer, max_x, max_y);
 		int wx, wy;
+		int first = 1;
 		for (wy = 0; wy < max_y; wy++) {
 			for (wx = 0; wx < max_x; wx++) {
 				char curr = screen_buffer[wy * max_x + wx];
-				move (wy, wx);
+				move (max_y - wy, wx);
 				if (curr) {
-					attron (COLOR_PAIR ((wy * max_x + wx) % 128 + 128));
+					//Compute color
+					v3 bary_vec;
+					float fx, fy;
+					fx = (((float)wx + 0.5) / max_x) * 2 - 1;
+					fy = (((float)wy + 0.5) / max_y) * 2 - 1;
+					tri rasterized;
+					v3 ra, rb, rc, pt;
+					initv3 (&ra, t.a.x, t.a.y, 0);
+					initv3 (&rb, t.b.x, t.b.y, 0);
+					initv3 (&rc, t.c.x, t.c.y, 0);
+					inittri (&rasterized, &ra, &rb, &rc);
+					initv3 (&pt, fx, fy, 0);
+					initv3 (&(rasterized.n), 0, 0, -1);
+					barycentric (&bary_vec, &pt, &rasterized); 
+					bary_vec.x = bary_vec.x < 0 ? 0 : bary_vec.x;
+					bary_vec.y = bary_vec.y < 0 ? 0 : bary_vec.y;
+					bary_vec.z = bary_vec.z < 0 ? 0 : bary_vec.z;
+					v3* color_vec = &bary_vec;
+					#ifdef COLOR_MODE_256
+					int r = (int)(color_vec->x * 8);
+					int g = (int)(color_vec->y * 8);
+					int b = (int)(color_vec->z * 4);
+					int color_index = (r << 5) + (g << 2) + b;
+					#else
+					int r = (int)(color_vec->x * 4);
+					int g = (int)(color_vec->y * 8);
+					int b = (int)(color_vec->z * 4);
+					int color_index = (r << 5) + (g << 2) + b + 128;
+					#endif
+					attron (COLOR_PAIR (color_index));
 					addch (screen_buffer[wy * max_x + wx]);
-					attroff (COLOR_PAIR ((wy * max_x + wx) % 128 + 128));
+					attroff (COLOR_PAIR (color_index));
 				} else {
 					addch (' ');
 				}
@@ -219,6 +261,19 @@ int main () {
 		getch ();
 
 	}
+
+
+	//Restore default pallate
+	#ifdef COLOR_MODE_256
+	init_color (COLOR_BLACK, 0, 0, 0);
+	init_color (COLOR_RED, 1000, 0, 0);
+	init_color (COLOR_GREEN, 0, 1000, 0);
+	init_color (COLOR_YELLOW, 1000, 1000, 0);
+	init_color (COLOR_BLUE, 0, 0, 1000);
+	init_color (COLOR_MAGENTA, 1000, 0, 1000);
+	init_color (COLOR_CYAN, 1000, 1000, 0);
+	init_color (COLOR_WHITE, 1000, 1000, 1000);
+	#endif
 
 	//Wait and end
 	getch ();
