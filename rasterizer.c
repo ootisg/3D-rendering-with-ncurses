@@ -83,11 +83,7 @@ void draw_line (int x1, int y1, int x2, int y2, int* line_raster_buffer) {
 
 }
 
-void draw_tri (tri* triangle) {
-
-	//Calculate screen coords
-	int max_x, max_y;
-	getmaxyx (stdscr, max_y, max_x);
+void draw_tri (tri* triangle, char* buffer, int width, int height) {
 
 	//Compute the top and bottom y
 	float vals[3];
@@ -111,23 +107,22 @@ void draw_tri (tri* triangle) {
 		vals[0] = vals[1];
 		vals[1] = temp;
 	}
-	int tri_min_y = ((vals[0] + 1) / 2) * max_y;
-	int tri_max_y = ((vals[2] + 1) / 2) * max_y;
+	int tri_min_y = ((vals[0] + 1) / 2) * height;
+	int tri_max_y = ((vals[2] + 1) / 2) * height;
 
 	int i;
-	int* raster_buffer = calloc (sizeof (int), max_y * 2);
+	int* raster_buffer = calloc (sizeof (int), height * 2);
 	for (i = 0; i < 3; i++) {
 		v3 v_from = (i == 0 ? triangle->a : (i == 1 ? triangle->b : triangle->c));
 		v3 v_to = (i == 0 ? triangle->b : (i == 1 ? triangle->c : triangle->a));
-		draw_line (((v_from.x + 1) / 2) * max_x, ((v_from.y + 1) / 2) * max_y, ((v_to.x + 1) / 2) * max_x, ((v_to.y + 1) / 2) * max_y, raster_buffer);
+		draw_line (((v_from.x + 1) / 2) * width, ((v_from.y + 1) / 2) * height, ((v_to.x + 1) / 2) * width, ((v_to.y + 1) / 2) * height, raster_buffer);
 	}
 	for (i = tri_min_y; i <= tri_max_y; i++) {
 		int a = raster_buffer[i * 2];
 		int b = raster_buffer[i * 2 + 1];
 		int wx;
 		for (wx = a; wx <= b; wx++) {
-			move (max_y - i, wx);
-			addch ('#');
+			buffer[(height - i) * width + wx] = '#';
 		}
 	}
 	free (raster_buffer);
@@ -180,13 +175,28 @@ int main () {
 			vertices[i]->y = res.y / res.w;
 			vertices[i]->z = res.z / res.w;
 		}
-		draw_tri (&t);
-		getch ();
-		clear ();
-	}
 
-	//Draw triangle
-	draw_tri (&t);
+		//Draw triangle
+		int max_x, max_y;
+		getmaxyx (stdscr, max_y, max_x);
+		char* screen_buffer = calloc (1, max_x * max_y);
+		draw_tri (&t, screen_buffer, max_x, max_y);
+		int wx, wy;
+		for (wy = 0; wy < max_y; wy++) {
+			for (wx = 0; wx < max_x; wx++) {
+				char curr = screen_buffer[wy * max_x + wx];
+				move (wy, wx);
+				if (curr) {
+					addch (curr);
+				} else {
+					addch (' ');
+				}
+			}
+		}
+		free (screen_buffer);
+		getch ();
+
+	}
 
 	//Wait and end
 	getch ();
