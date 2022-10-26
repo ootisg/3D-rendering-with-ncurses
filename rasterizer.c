@@ -136,6 +136,26 @@ int main () {
 	raw ();
 	noecho ();
 
+	//Init colors
+	int RGB_PAIR_START = 0;
+	int RGB_COLOR_START = 0;
+	if (has_colors ()) {
+		start_color ();
+		int i;
+		int gtable[8] = {0, 125, 250, 375, 500, 625, 750, 1000};
+		int rbtable[4] = {0, 333, 666, 1000};
+		for (i = 128; i < 256; i++) {
+			int r = rbtable[(i & 0x60) >> 5];
+			int g = gtable[(i & 0x1C) >> 2];
+		       	int b = rbtable[(i & 0x03) >> 0];
+			init_color (i, r, g, b);
+			init_pair (i, i, 0);
+		}
+	} else {
+		endwin ();
+		exit (1);
+	}
+
 	//Init triangle
 	tri t;
 	t.a.x = 0;
@@ -187,7 +207,9 @@ int main () {
 				char curr = screen_buffer[wy * max_x + wx];
 				move (wy, wx);
 				if (curr) {
-					addch (curr);
+					attron (COLOR_PAIR ((wy * max_x + wx) % 128 + 128));
+					addch (screen_buffer[wy * max_x + wx]);
+					attroff (COLOR_PAIR ((wy * max_x + wx) % 128 + 128));
 				} else {
 					addch (' ');
 				}
