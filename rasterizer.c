@@ -188,11 +188,12 @@ int main () {
 	v3* vertices[3] = {&(t.a), &(t.b), &(t.c)};
 	mat4 scl, rot, trans, lookat, perspective;
 	matrix_trans4 (&trans, 0.0, 0.0, 3.0);
-	matrix_scale4 (&scl, 1.25, 1.25, 1.25);
+	matrix_scale4 (&scl, 2, 0.75, 2);
 	matrix_lookat (&lookat, newv3 (3.0, -2.0, 0.0), newv3 (0.0, 0.0, 3.0), newv3 (0, 1, 0));
 	double aspect = (double)max_x / max_y;
 	matrix_perspective (&perspective, M_PI/4, aspect, 0.1, 50);
 	int ang;
+	float winv_buffer[3];
 	for (ang = 0; ang < 360; ang++) {
 		matrix_roty4 (&rot, (M_PI/180) * ang);
 		int i;
@@ -207,6 +208,7 @@ int main () {
 			vertices[i]->x = res.x / res.w;
 			vertices[i]->y = res.y / res.w;
 			vertices[i]->z = res.z / res.w;
+			winv_buffer[i] = 1 / res.w;
 		}
 
 		//Draw triangle
@@ -237,6 +239,11 @@ int main () {
 					bary_vec.x = bary_vec.x < 0 ? 0 : bary_vec.x;
 					bary_vec.y = bary_vec.y < 0 ? 0 : bary_vec.y;
 					bary_vec.z = bary_vec.z < 0 ? 0 : bary_vec.z;
+					//Perspective-coorect mapping
+					float pc_denominator = 1 / (bary_vec.x * winv_buffer[0] + bary_vec.y * winv_buffer[1] + bary_vec.z * winv_buffer[2]);
+					bary_vec.x = bary_vec.x * winv_buffer[0] * pc_denominator;
+					bary_vec.y = bary_vec.y * winv_buffer[1] * pc_denominator;
+					bary_vec.z = bary_vec.z * winv_buffer[2] * pc_denominator;
 					v3* color_vec = &bary_vec;
 					#ifdef COLOR_MODE_256
 					int r = (int)(color_vec->x * 8);
