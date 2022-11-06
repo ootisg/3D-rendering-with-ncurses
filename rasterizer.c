@@ -6,7 +6,7 @@
 #include "matrix.h"
 #include "tri.h"
 
-void draw_line (int x1, int y1, int x2, int y2, int* line_raster_buffer) {
+void draw_line (int x1, int y1, int x2, int y2, int* line_raster_buffer, int width, int height) {
 
 	//Breensham's line drawing algorithm
 	int curr_x = x1 * 2 + 1;
@@ -56,11 +56,12 @@ void draw_line (int x1, int y1, int x2, int y2, int* line_raster_buffer) {
 	int i;
 	float err = 0;
 	for (i = 0; i < num_steps; i++) {
-		
 		int raster_x = (curr_x/2);
 		int raster_y = (curr_y/2);
+		raster_x = raster_x < 0 ? 0 : (raster_x >= width ? width - 1 : raster_x);
+		raster_y = raster_y < 0 ? 0 : (raster_y >= height ? height - 1 : raster_y);
 		//Add to raster buffer
-		if (line_raster_buffer[raster_y * 2] == 0) {
+		if (line_raster_buffer[raster_y * 2] == -1) {
 			line_raster_buffer[raster_y * 2] = raster_x;
 			line_raster_buffer[raster_y * 2 + 1] = raster_x; //First and last are identical for the first point
        		} else {
@@ -84,41 +85,74 @@ void draw_line (int x1, int y1, int x2, int y2, int* line_raster_buffer) {
 
 }
 
-void draw_tri (tri* triangle, char* buffer, int width, int height) {
+void sort_by_angle (v3* src, int num_vertices) {
+
+	//Compute the angles about the center point
+	float* angles = malloc (sizeof (float) * num_vertices);
+	float center_x = (src[0].x + src[1].x) / 2;
+	float center_y = (src[0].y + src[1].y) / 2;
+	float dx, dy;
+	int i, j;
+	for (i = 0; i < num_vertices; i++) {
+		dx = src[i].x - center_x;
+		dy = src[i].y - center_y;
+		angles[i] = atan2f (dy, dx); 
+	}
+
+	//Sort the points
+	for (i = 0; i < num_vertices; i++) {
+		float min_ang = angles[i];
+		int min_index = i;
+		for (j = i; j < num_vertices; j++) {
+			if (angles[j] < min_ang) {
+				min_ang = angles[j];
+				min_index = j;
+			}
+		}
+		if (min_index != i) {
+			//Swap angles
+			float tempf = angles[i];
+			angles[i] = angles[min_index];
+			angles[min_index] = tempf;
+			//Swap vertices
+			v3 tempv = src[i];
+			src[i] = src[min_index];
+			src[min_index] = tempv;
+		}
+	}
+
+}
+
+
+void draw_polygon (v3* verts, int num_vertices, char* buffer, int width, int height) {
 
 	//Compute the top and bottom y
-	float vals[3];
-	vals[0] = triangle->a.y;
-	vals[1] = triangle->b.y;
-	vals[2] = triangle->c.y;
-	//Inline bubble sort
-	float temp;
-	if (vals[0] > vals[1]) {
-		temp = vals[0];
-		vals[0] = vals[1];
-		vals[1] = temp;
-	}
-	if (vals[1] > vals[2]) {
-		temp = vals[1];
-		vals[1] = vals[2];
-		vals[2] = temp;
-	}
-	if (vals[0] > vals[1]) {
-		temp = vals[0];
-		vals[0] = vals[1];
-		vals[1] = temp;
-	}
-	int tri_min_y = ((vals[0] + 1) / 2) * height;
-	int tri_max_y = ((vals[2] + 1) / 2) * height;
-
 	int i;
-	int* raster_buffer = calloc (sizeof (int), height * 2);
-	for (i = 0; i < 3; i++) {
-		v3 v_from = (i == 0 ? triangle->a : (i == 1 ? triangle->b : triangle->c));
-		v3 v_to = (i == 0 ? triangle->b : (i == 1 ? triangle->c : triangle->a));
-		draw_line (((v_from.x + 1) / 2) * width, ((v_from.y + 1) / 2) * height, ((v_to.x + 1) / 2) * width, ((v_to.y + 1) / 2) * height, raster_buffer);
+	float top_y = verts[0].y;
+	float bottom_y = verts[0].y;
+	for (i = 0; i < num_vertices; i++) {
+		float curr = verts[i].y;
+		if (curr > top_y) {
+			top_y = curr;
+		}
+		if (curr < bottom_y) {
+			bottom_y = curr;
+		}
 	}
-	for (i = tri_min_y; i <= tri_max_y; i++) {
+	int top_px = ((top_y + 1) / 2) * height;
+	int bottom_px = ((bottom_y + 1) / 2) * height;
+	
+	//Draw the polygon
+	int* raster_buffer = malloc (sizeof (int) * height * 2);
+	for (i = 0; i < height * 2; i++) {
+		raster_buffer[i] = -1;
+	}
+	for (i = 0; i < num_vertices; i++) {
+		v3 v_from = verts[i];
+		v3 v_to = verts[(i + 1) % num_vertices];
+		draw_line (((v_from.x + 1) / 2) * width, ((v_from.y + 1) / 2) * height, ((v_to.x + 1) / 2) * width, ((v_to.y + 1) / 2) * height, raster_buffer, width, height);
+	}
+	for (i = bottom_px; i <= top_px; i++) {
 		int a = raster_buffer[i * 2];
 		int b = raster_buffer[i * 2 + 1];
 		int wx;
@@ -130,8 +164,109 @@ void draw_tri (tri* triangle, char* buffer, int width, int height) {
 
 }
 
-int main () {
+void draw_tri (tri* t, char* buffer, int width, int height) {
 
+	//Initial case
+	int i;
+	int is_normal = 1;
+	for (i = 0; i < 3; i++) {
+		v3* curr = (v3*)(&(t->a)) + i;
+		if (!(curr->x > -1 && curr->x < 1 && curr->y > -1 && curr->y < 1)) {
+			is_normal = 0;
+			break;
+		}
+	}
+	if (is_normal) {
+		draw_polygon (&(t->a), 3, buffer, width, height);
+		return;
+	} else {
+
+		//Allocate space for the vertices
+		v3 verts[8];
+		int vertex_count = 0;
+
+		//Include all triangle vertices that are inside the NDC area
+		for (i = 0; i < 3; i++) {
+			v3* curr = (v3*)(&(t->a)) + i;
+			if (curr->x > -1 && curr->x < 1 && curr->y > -1 && curr->y < 1) {
+				verts[vertex_count] = *curr;
+				vertex_count++;
+			}
+		}
+
+		//Include all triangle edge intersections with the screen boundaries
+		for (i = 0; i < 3; i++) {
+			//Get the edge vector
+			v3* from = (i == 0 ? &(t->a) : (i == 1 ? &(t->b) : &(t->c)));
+			v3* to = (i == 0 ? &(t->b) : (i == 1 ? &(t->c) : &(t->a)));
+			v3 edge;
+			vector_diff3 (&edge, from, to);
+			//Find the slope/intecept form
+			float m, b;
+			if (to->x == from->x) {
+				//TODO do I need to include vertical edges?
+				//Horizontal edges
+				int j;
+				for (j = -1; j <= 1; j += 2) {
+					if (j > fminf (from->y, to->y) && j < fmaxf (from->y, to->y)) {
+						initv3 (verts + vertex_count, from->x, j, 0);
+						vertex_count++;
+					}
+				}
+			} else {
+				//TODO fix weird bug with horizontal lines
+				m = (to->y - from->y) / (to->x - from->x); //m = dx/dy
+				b = from->y - m * from->x; //b = y - mx
+				//y = mx + b, (y - b) / m = x;
+				float isect;
+				//x=1, x=-1
+				int j;
+				for (j = -1; j <= 1; j += 2) {
+					isect = m * j + b;
+					if (isect >= -1 && isect <= 1 && isect > fminf (from->y, to->y) && isect < fmaxf (from->y, to->y)) {
+						initv3 (verts + vertex_count, j, isect, 0);
+						vertex_count++;
+					}
+				}
+				//y=1, y=-1
+				for (j = -1; j <= 1; j += 2) {
+					if (m != 0) {
+						isect = (j - b) / m;
+						if (isect >= -1 && isect <= 1 && isect > fminf (from->x, to->x) && isect < fmaxf (from->x, to->x)) {
+							initv3 (verts + vertex_count, isect, j, 0);
+							vertex_count++;
+						}
+					}
+				}
+			}
+		}
+
+		//Include all of the screen corners within the triangle
+		v3 corners[4];
+		initv3 (corners, -1.0, -1.0, 0);
+		initv3 (corners + 1, 1.0, -1.0, 0);
+		initv3 (corners + 2, -1.0, 1.0, 0);
+		initv3 (corners + 3, 1.0, 1.0, 0);
+		for (i = 0; i < 4; i++) {
+			v3 bary;
+			barycentric (&bary, corners + i, t);
+			if (bary.x >= 0 && bary.y >= 0 && bary.z >= 0) {
+				verts[vertex_count] = corners[i];
+				vertex_count++;
+			}
+		}
+		
+		if (vertex_count > 0) {
+			sort_by_angle (verts, vertex_count);
+			draw_polygon (verts, vertex_count, buffer, width, height);
+		}
+
+	}
+
+}
+
+int main () {
+	
 	//Init curses
 	initscr ();
 	raw ();
@@ -166,6 +301,16 @@ int main () {
 		exit (1);
 	}
 
+	//Init hexagon
+	v3 hexagon[6];
+	initv3 (&(hexagon[0]), 0, 0.5, 0);
+	initv3 (&(hexagon[1]), -0.3, 0.3, 0);
+	initv3 (&(hexagon[2]), 0.3, 0.3, 0);
+	initv3 (&(hexagon[3]), -0.3, -0.3, 0);
+	initv3 (&(hexagon[4]), 0.3, -0.3, 0);
+	initv3 (&(hexagon[5]), 0, -0.5, 0);
+	sort_by_angle (hexagon, 6);
+
 	//Init triangle
 	tri t;
 	t.a.x = 0;
@@ -188,7 +333,7 @@ int main () {
 	v3* vertices[3] = {&(t.a), &(t.b), &(t.c)};
 	mat4 scl, rot, trans, lookat, perspective;
 	matrix_trans4 (&trans, 0.0, 0.0, 3.0);
-	matrix_scale4 (&scl, 2, 0.75, 2);
+	matrix_scale4 (&scl, 10, 2.5, 1);
 	matrix_lookat (&lookat, newv3 (3.0, -2.0, 0.0), newv3 (0.0, 0.0, 3.0), newv3 (0, 1, 0));
 	double aspect = (double)max_x / max_y;
 	matrix_perspective (&perspective, M_PI/4, aspect, 0.1, 50);
@@ -220,7 +365,7 @@ int main () {
 		for (wy = 0; wy < max_y; wy++) {
 			for (wx = 0; wx < max_x; wx++) {
 				char curr = screen_buffer[wy * max_x + wx];
-				move (max_y - wy, wx);
+				move (max_y - 1 - wy, wx);
 				if (curr) {
 					//Compute color
 					v3 bary_vec;
@@ -265,7 +410,7 @@ int main () {
 			}
 		}
 		free (screen_buffer);
-		getch ();
+		int c = getch ();
 
 	}
 
