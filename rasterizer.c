@@ -124,7 +124,7 @@ void sort_by_angle (v3* src, int num_vertices) {
 }
 
 
-void draw_polygon (v3* verts, int num_vertices, char* buffer, int width, int height) {
+void draw_polygon (v3* verts, tri* t, float* winv_buffer, int num_vertices, output_char* buffer, int width, int height) {
 
 	//Compute the top and bottom y
 	int i;
@@ -157,14 +157,41 @@ void draw_polygon (v3* verts, int num_vertices, char* buffer, int width, int hei
 		int b = raster_buffer[i * 2 + 1];
 		int wx;
 		for (wx = a; wx <= b; wx++) {
-			buffer[(i) * width + wx] = '#';
+			//Compute color
+			v3 bary_vec;
+			float fx, fy;
+			fx = (((float)wx + 0.5) / width) * 2 - 1;
+			fy = (((float)i + 0.5) / height) * 2 - 1;
+			tri rasterized;
+			v3 ra, rb, rc, pt;
+			initv3 (&ra, t->a.x, t->a.y, 0);
+			initv3 (&rb, t->b.x, t->b.y, 0);
+			initv3 (&rc, t->c.x, t->c.y, 0);
+			inittri (&rasterized, &ra, &rb, &rc);
+			initv3 (&pt, fx, fy, 0);
+			initv3 (&(rasterized.n), 0, 0, -1);
+			barycentric (&bary_vec, &pt, &rasterized); 
+			bary_vec.x = bary_vec.x < 0 ? 0 : bary_vec.x;
+			bary_vec.y = bary_vec.y < 0 ? 0 : bary_vec.y;
+			bary_vec.z = bary_vec.z < 0 ? 0 : bary_vec.z;
+			//Perspective-coorect mapping
+			float pc_denominator = 1 / (bary_vec.x * winv_buffer[0] + bary_vec.y * winv_buffer[1] + bary_vec.z * winv_buffer[2]);
+			bary_vec.x = bary_vec.x * winv_buffer[0] * pc_denominator;
+			bary_vec.y = bary_vec.y * winv_buffer[1] * pc_denominator;
+			bary_vec.z = bary_vec.z * winv_buffer[2] * pc_denominator;
+			v3* color_vec = &bary_vec;
+			int r = (int)(color_vec->x * 255);
+			int g = (int)(color_vec->y * 255);
+			int b = (int)(color_vec->z * 255);
+			buffer[(i) * width + wx].color = (r << 16) | (g << 8) | (b << 0);
+			buffer[(i) * width + wx].style = 0;
 		}
 	}
 	free (raster_buffer);
 
 }
 
-void draw_tri (tri* t, char* buffer, int width, int height) {
+void draw_tri (tri* t, output_char* buffer, float* winv_buffer, int width, int height) {
 
 	//Initial case
 	int i;
@@ -177,7 +204,7 @@ void draw_tri (tri* t, char* buffer, int width, int height) {
 		}
 	}
 	if (is_normal) {
-		draw_polygon (&(t->a), 3, buffer, width, height);
+		draw_polygon (&(t->a), t, winv_buffer, 3, buffer, width, height);
 		return;
 	} else {
 
@@ -258,7 +285,7 @@ void draw_tri (tri* t, char* buffer, int width, int height) {
 		
 		if (vertex_count > 0) {
 			sort_by_angle (verts, vertex_count);
-			draw_polygon (verts, vertex_count, buffer, width, height);
+			draw_polygon (verts, t, winv_buffer, vertex_count, buffer, width, height);
 		}
 
 	}
@@ -333,13 +360,13 @@ int main () {
 	v3* vertices[3] = {&(t.a), &(t.b), &(t.c)};
 	mat4 scl, rot, trans, lookat, perspective;
 	matrix_trans4 (&trans, 0.0, 0.0, 3.0);
-	matrix_scale4 (&scl, 10, 2.5, 1);
+	matrix_scale4 (&scl, 10, 1.8, 1);
 	matrix_lookat (&lookat, newv3 (3.0, -2.0, 0.0), newv3 (0.0, 0.0, 3.0), newv3 (0, 1, 0));
 	double aspect = (double)max_x / max_y;
 	matrix_perspective (&perspective, M_PI/4, aspect, 0.1, 50);
 	int ang;
 	float winv_buffer[3];
-	for (ang = 0; ang < 360; ang++) {
+	for (ang = 135; ang < 360; ang++) {
 		matrix_roty4 (&rot, (M_PI/180) * ang);
 		int i;
 		for (i = 0; i < 3; i++) {
@@ -358,51 +385,33 @@ int main () {
 
 		//Draw triangle
 		update_normal (&t);
-		char* screen_buffer = calloc (1, max_x * max_y);
-		draw_tri (&t, screen_buffer, max_x, max_y);
+		output_char* screen_buffer = calloc (sizeof (output_char), max_x * max_y);
+		draw_tri (&t, screen_buffer, winv_buffer, max_x, max_y);
 		int wx, wy;
 		int first = 1;
+		move (0, 0);
+		printw ("%d\n", ang);
 		for (wy = 0; wy < max_y; wy++) {
 			for (wx = 0; wx < max_x; wx++) {
-				char curr = screen_buffer[wy * max_x + wx];
+				output_char curr = screen_buffer[wy * max_x + wx];
 				move (max_y - 1 - wy, wx);
-				if (curr) {
-					//Compute color
-					v3 bary_vec;
-					float fx, fy;
-					fx = (((float)wx + 0.5) / max_x) * 2 - 1;
-					fy = (((float)wy + 0.5) / max_y) * 2 - 1;
-					tri rasterized;
-					v3 ra, rb, rc, pt;
-					initv3 (&ra, t.a.x, t.a.y, 0);
-					initv3 (&rb, t.b.x, t.b.y, 0);
-					initv3 (&rc, t.c.x, t.c.y, 0);
-					inittri (&rasterized, &ra, &rb, &rc);
-					initv3 (&pt, fx, fy, 0);
-					initv3 (&(rasterized.n), 0, 0, -1);
-					barycentric (&bary_vec, &pt, &rasterized); 
-					bary_vec.x = bary_vec.x < 0 ? 0 : bary_vec.x;
-					bary_vec.y = bary_vec.y < 0 ? 0 : bary_vec.y;
-					bary_vec.z = bary_vec.z < 0 ? 0 : bary_vec.z;
-					//Perspective-coorect mapping
-					float pc_denominator = 1 / (bary_vec.x * winv_buffer[0] + bary_vec.y * winv_buffer[1] + bary_vec.z * winv_buffer[2]);
-					bary_vec.x = bary_vec.x * winv_buffer[0] * pc_denominator;
-					bary_vec.y = bary_vec.y * winv_buffer[1] * pc_denominator;
-					bary_vec.z = bary_vec.z * winv_buffer[2] * pc_denominator;
-					v3* color_vec = &bary_vec;
+				if (curr.color) {
+					int r_8bit = (curr.color & 0xFF0000) >> 16;
+					int g_8bit = (curr.color & 0x00FF00) >> 8;
+					int b_8bit = (curr.color & 0x0000FF) >> 0;
 					#ifdef COLOR_MODE_256
-					int r = (int)(color_vec->x * 8);
-					int g = (int)(color_vec->y * 8);
-					int b = (int)(color_vec->z * 4);
+					int r = r_8bit / 32;
+					int g = g_8bit / 32;
+					int b = b_8bit / 64;
 					int color_index = (r << 5) + (g << 2) + b;
 					#else
-					int r = (int)(color_vec->x * 4);
-					int g = (int)(color_vec->y * 8);
-					int b = (int)(color_vec->z * 4);
+					int r = r_8bit / 64;
+					int g = g_8bit / 32;
+					int b = b_8bit / 64;
 					int color_index = (r << 5) + (g << 2) + b + 128;
 					#endif
 					attron (COLOR_PAIR (color_index));
-					addch (screen_buffer[wy * max_x + wx]);
+					addch ('#');
 					attroff (COLOR_PAIR (color_index));
 				} else {
 					addch (' ');
