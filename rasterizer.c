@@ -124,7 +124,7 @@ void sort_by_angle (v3* src, int num_vertices) {
 }
 
 
-void draw_polygon (v3* verts, tri* t, float* winv_buffer, int num_vertices, output_char* buffer, int width, int height) {
+void draw_polygon (v3* verts, tri* t, float* winv_buffer, int num_vertices, output_char* buffer, uint32_t* depth_buffer, int width, int height) {
 
 	//Compute the top and bottom y
 	int i;
@@ -175,23 +175,32 @@ void draw_polygon (v3* verts, tri* t, float* winv_buffer, int num_vertices, outp
 			bary_vec.y = bary_vec.y < 0 ? 0 : bary_vec.y;
 			bary_vec.z = bary_vec.z < 0 ? 0 : bary_vec.z;
 			//Perspective-coorect mapping
+			float depth = bary_vec.x * t->a.z + bary_vec.y * t->b.z + bary_vec.z * t->c.z; //Why doesn't this work when using perspective-correct interpolation?
 			float pc_denominator = 1 / (bary_vec.x * winv_buffer[0] + bary_vec.y * winv_buffer[1] + bary_vec.z * winv_buffer[2]);
 			bary_vec.x = bary_vec.x * winv_buffer[0] * pc_denominator;
 			bary_vec.y = bary_vec.y * winv_buffer[1] * pc_denominator;
 			bary_vec.z = bary_vec.z * winv_buffer[2] * pc_denominator;
-			v3* color_vec = &bary_vec;
-			int r = (int)(color_vec->x * 255);
-			int g = (int)(color_vec->y * 255);
-			int b = (int)(color_vec->z * 255);
-			buffer[(i) * width + wx].color = (r << 16) | (g << 8) | (b << 0);
-			buffer[(i) * width + wx].style = 0;
+			//Depth buffer compute/check
+			uint32_t depth_int = (uint32_t)(depth * 16777215); //Between 0 and (2^24) - 1, inclusive
+			uint32_t buff_depth = depth_buffer[i * width + wx];
+			if ((buff_depth == 0 || depth_int < buff_depth) && depth >= 0) {
+				//printw ("%f\n", depth);
+				//TODO find out why w is negative
+				depth_buffer[i * width + wx] = depth_int;
+				v3* color_vec = &bary_vec;
+				int r = (int)(color_vec->x * 255);
+				int g = (int)(color_vec->y * 255);
+				int b = (int)(color_vec->z * 255);
+				buffer[(i) * width + wx].color = (r << 16) | (g << 8) | (b << 0);
+				buffer[(i) * width + wx].style = 0;
+			}
 		}
 	}
 	free (raster_buffer);
 
 }
 
-void draw_tri (tri* t, output_char* buffer, float* winv_buffer, int width, int height) {
+void draw_tri (tri* t, output_char* buffer, uint32_t* depth_buffer, float* winv_buffer, int width, int height) {
 
 	//Initial case
 	int i;
@@ -204,7 +213,7 @@ void draw_tri (tri* t, output_char* buffer, float* winv_buffer, int width, int h
 		}
 	}
 	if (is_normal) {
-		draw_polygon (&(t->a), t, winv_buffer, 3, buffer, width, height);
+		draw_polygon (&(t->a), t, winv_buffer, 3, buffer, depth_buffer, width, height);
 		return;
 	} else {
 
@@ -285,7 +294,7 @@ void draw_tri (tri* t, output_char* buffer, float* winv_buffer, int width, int h
 		
 		if (vertex_count > 0) {
 			sort_by_angle (verts, vertex_count);
-			draw_polygon (verts, t, winv_buffer, vertex_count, buffer, width, height);
+			draw_polygon (verts, t, winv_buffer, vertex_count, buffer, depth_buffer, width, height);
 		}
 
 	}
@@ -298,6 +307,7 @@ int main () {
 	initscr ();
 	raw ();
 	noecho ();
+	keypad (stdscr, 1);
 
 	//Init colors
 	int RGB_PAIR_START = 0;
@@ -308,7 +318,7 @@ int main () {
 		int i;
 		int eighttable[8] = {0, 125, 250, 375, 500, 625, 750, 1000};
 		int fourtable[4] = {0, 333, 666, 1000};
-		for (i = 0; i < 256; i++) {
+		for (i = 0; i < 255; i++) {
 			#ifdef COLOR_MODE_256
 			int r = eighttable[(i & 0xE0) >> 5];
 			int g = eighttable[(i & 0x1C) >> 2];
@@ -316,85 +326,98 @@ int main () {
 			int index = i;
 			#else
 			int r = fourtable[(i & 0x60) >> 5];
-			int g = fourtable[(i & 0x1C) >> 2];
+			int g = eighttable[(i & 0x1C) >> 2];
 			int b = fourtable[(i & 0x03) >> 0];
 			int index = i % 128 + 128;
 			#endif
 			init_color (index, r, g, b);
 			init_pair (index, i, 0);
 		}
+		init_color (255, 1000, 1000, 1000);
+		init_pair (255, 255, 255);
 	} else {
 		endwin ();
 		exit (1);
 	}
 
-	//Init hexagon
-	v3 hexagon[6];
-	initv3 (&(hexagon[0]), 0, 0.5, 0);
-	initv3 (&(hexagon[1]), -0.3, 0.3, 0);
-	initv3 (&(hexagon[2]), 0.3, 0.3, 0);
-	initv3 (&(hexagon[3]), -0.3, -0.3, 0);
-	initv3 (&(hexagon[4]), 0.3, -0.3, 0);
-	initv3 (&(hexagon[5]), 0, -0.5, 0);
-	sort_by_angle (hexagon, 6);
+	//Init cursor
+	int cursor_x = 0;
+	int cursor_y = 0;
 
 	//Init triangle
-	tri t;
-	t.a.x = 0;
-	t.a.y = -0.5;
-	t.a.z = 0.0;
-	t.b.x = -0.5;
-	t.b.y = 0.5;
-	t.b.z = 0.0;
-	t.c.x = 0.5;
-	t.c.y = 0.5;
-	t.c.z = 0.0;
+	tri tris[2];
 	
-	//Transform triangle
+	tris[0].a.x = 0.0;
+	tris[0].a.y = -0.5;
+	tris[0].a.z = 0.0;
+	tris[0].b.x = -0.5;
+	tris[0].b.y = 0.5;
+	tris[0].b.z = 0.0;
+	tris[0].c.x = 0.5;
+	tris[0].c.y = 0.5;
+	tris[0].c.z = 0.0;
+	
+	tris[1].a.x = 0.0;
+	tris[1].a.y = -0.5;
+	tris[1].a.z = 0.0;
+	tris[1].b.x = 0.0;
+	tris[1].b.y = 0.5;
+	tris[1].b.z = -0.5;
+	tris[1].c.x = 0.0;
+	tris[1].c.y = 0.5;
+	tris[1].c.z = 0.5;
+	
 	int max_x, max_y;
 	getmaxyx (stdscr, max_y, max_x);
-	v3 origs[3];
-	origs[0] = t.a;
-	origs[1] = t.b;
-	origs[2] = t.c;
-	v3* vertices[3] = {&(t.a), &(t.b), &(t.c)};
-	mat4 scl, rot, trans, lookat, perspective;
-	matrix_trans4 (&trans, 0.0, 0.0, 3.0);
-	matrix_scale4 (&scl, 10, 1.8, 1);
-	matrix_lookat (&lookat, newv3 (3.0, -2.0, 0.0), newv3 (0.0, 0.0, 3.0), newv3 (0, 1, 0));
-	double aspect = (double)max_x / max_y;
-	matrix_perspective (&perspective, M_PI/4, aspect, 0.1, 50);
 	int ang;
-	float winv_buffer[3];
-	for (ang = 135; ang < 360; ang++) {
-		matrix_roty4 (&rot, (M_PI/180) * ang);
-		int i;
-		for (i = 0; i < 3; i++) {
-			v4 tmp1, tmp2, res;
-			initv4 (&tmp1, origs[i].x, origs[i].y, origs[i].z, 1.0);
-			matrix_mul4v (&tmp2, &scl, &tmp1);
-			matrix_mul4v (&tmp1, &rot, &tmp2);
-			matrix_mul4v (&tmp2, &trans, &tmp1);
-			matrix_mul4v (&tmp1, &lookat, &tmp2);
-			matrix_mul4v (&res, &perspective, &tmp1);
-			vertices[i]->x = res.x / res.w;
-			vertices[i]->y = res.y / res.w;
-			vertices[i]->z = res.z / res.w;
-			winv_buffer[i] = 1 / res.w;
-		}
-
-		//Draw triangle
-		update_normal (&t);
+	for (ang = 0; ang < 360; ang+=2) {
+		int curr_tri;
 		output_char* screen_buffer = calloc (sizeof (output_char), max_x * max_y);
-		draw_tri (&t, screen_buffer, winv_buffer, max_x, max_y);
+		uint32_t* depth_buffer = calloc (sizeof (uint32_t), max_x * max_y);
+		for (curr_tri = 0; curr_tri < 2; curr_tri++) {
+			//Transform triangle
+			tri t = tris[curr_tri];
+			v3 origs[3];
+			origs[0] = t.a;
+			origs[1] = t.b;
+			origs[2] = t.c;
+			v3* vertices[3] = {&(t.a), &(t.b), &(t.c)};
+			mat4 scl, rot, trans, lookat, perspective;
+			matrix_trans4 (&trans, 0.0, 0.0, 3.0);
+			matrix_scale4 (&scl, 10, 2.5, 10);
+			matrix_lookat (&lookat, newv3 (3.0, -2.0, 0.0), newv3 (0.0, 0.0, 3.0), newv3 (0, 1, 0));
+			double aspect = (double)max_x / max_y;
+			matrix_perspective (&perspective, M_PI/4, aspect, 0.1, 50);
+			float winv_buffer[3];
+			matrix_roty4 (&rot, (M_PI/180) * ang);
+			int i;
+			for (i = 0; i < 3; i++) {
+				v4 tmp1, tmp2, res;
+				initv4 (&tmp1, origs[i].x, origs[i].y, origs[i].z, 1.0);
+				matrix_mul4v (&tmp2, &scl, &tmp1);
+				matrix_mul4v (&tmp1, &rot, &tmp2);
+				matrix_mul4v (&tmp2, &trans, &tmp1);
+				matrix_mul4v (&tmp1, &lookat, &tmp2);
+				matrix_mul4v (&res, &perspective, &tmp1);
+				vertices[i]->x = res.x / res.w;
+				vertices[i]->y = res.y / res.w;
+				vertices[i]->z = res.z / res.w;
+				winv_buffer[i] = 1 / res.w;
+			}
+			//Draw triangle
+			update_normal (&t);
+			draw_tri (&t, screen_buffer, depth_buffer, winv_buffer, max_x, max_y);
+		}
+		
+		//Update the screen with the pixel buffer
 		int wx, wy;
 		int first = 1;
-		move (0, 0);
-		printw ("%d\n", ang);
+		//move (0, 0);
+		//printw ("%d\n", ang);
 		for (wy = 0; wy < max_y; wy++) {
 			for (wx = 0; wx < max_x; wx++) {
 				output_char curr = screen_buffer[wy * max_x + wx];
-				move (max_y - 1 - wy, wx);
+				move (wy, wx);
 				if (curr.color) {
 					int r_8bit = (curr.color & 0xFF0000) >> 16;
 					int g_8bit = (curr.color & 0x00FF00) >> 8;
@@ -418,9 +441,84 @@ int main () {
 				}
 			}
 		}
+		
 		free (screen_buffer);
-		int c = getch ();
+		free (depth_buffer);
+		int c = 0;
+		int arrow = 0;
+		while (!arrow) {
+			c = getch ();
+			if (c == KEY_RIGHT) {
+				arrow = 1;
+			}
+			if (c == 'q') {
+				endwin ();
+				exit (1);
+			}
+			//Cursor controls
+			int old_cursor_x = cursor_x;
+			int old_cursor_y = cursor_y;
+			if (c == 'w') {
+				cursor_y--;
+			}
+			if (c == 'a') {
+				cursor_x--;
+			}
+			if (c == 's') {
+				cursor_y++;
+			}
+			if (c == 'd') {
+				cursor_x++;
+			}
+			if (cursor_x < 0) {
+				cursor_x = 0;
+			}
+			if (cursor_x >= max_x) {
+				cursor_x = max_x - 1;
+			}
+			if (cursor_y < 0) {
+				cursor_y = 0;
+			}
+			if (cursor_y >= max_y) {
+				cursor_y = max_y - 1;
+			}
+			if (old_cursor_x != cursor_x || old_cursor_y != cursor_y) {
+				move (old_cursor_y, old_cursor_x);
+				output_char curr = screen_buffer[old_cursor_y * max_x + old_cursor_x];
+				if (curr.color) {
+					int r_8bit = (curr.color & 0xFF0000) >> 16;
+					int g_8bit = (curr.color & 0x00FF00) >> 8;
+					int b_8bit = (curr.color & 0x0000FF) >> 0;
+					#ifdef COLOR_MODE_256
+					int r = r_8bit / 32;
+					int g = g_8bit / 32;
+					int b = b_8bit / 64;
+					int color_index = (r << 5) + (g << 2) + b;
+					#else
+					int r = r_8bit / 64;
+					int g = g_8bit / 32;
+					int b = b_8bit / 64;
+					int color_index = (r << 5) + (g << 2) + b + 128;
+					#endif
+					attron (COLOR_PAIR (color_index));
+					addch ('#');
+					attroff (COLOR_PAIR (color_index));
+				} else {
+					addch (' ');
+				}
+				move (cursor_y, cursor_x);
+				attron (COLOR_PAIR (255));
+				addch ('#');
+				attroff (COLOR_PAIR (255));
+				//Print info
+				move (0, 0);
+				clrtoeol ();
 
+				uint32_t px_depth = depth_buffer[cursor_y * max_x + cursor_x];
+				printw ("%d\n", px_depth);
+
+			}
+		}
 	}
 
 

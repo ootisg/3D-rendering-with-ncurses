@@ -152,14 +152,16 @@ mat4* matrix_lookat (void* loc, v3* eye, v3* at, v3* up) {
 	
 	//The internet told me how to do it
 	v3 x_axis, y_axis, z_axis, tmp;
-	vector_normalize3 (&z_axis, vector_diff3 (&tmp, at, eye));
-	vector_normalize3 (&x_axis, vector_cross3 (&tmp, &z_axis, up));
-	vector_cross3 (&y_axis, &x_axis, &z_axis);
+	vector_normalize3 (&z_axis, vector_diff3 (&tmp, eye, at));
+	vector_normalize3 (&x_axis, vector_cross3 (&x_axis, up, &z_axis));
+	vector_cross3 (&y_axis, &z_axis, &x_axis);
+	v3 n_eye;
+	vector_scale3 (&n_eye, eye, -1);
 	
 	mat4* res = (mat4*)loc;
-	matrix_init4 (res,	x_axis.x, x_axis.y, x_axis.z, -vector_dot3 (&x_axis, eye),
-						y_axis.x, y_axis.y, y_axis.z, -vector_dot3 (&y_axis, eye),
-						z_axis.x, z_axis.y, z_axis.z, -vector_dot3 (&z_axis, eye),
+	matrix_init4 (res,	x_axis.x, x_axis.y, x_axis.z, vector_dot3 (&x_axis, &n_eye),
+						y_axis.x, y_axis.y, y_axis.z, vector_dot3 (&y_axis, &n_eye),
+						z_axis.x, z_axis.y, z_axis.z, vector_dot3 (&z_axis, &n_eye),
 						0, 0, 0, 1);
 	return res;
 	
