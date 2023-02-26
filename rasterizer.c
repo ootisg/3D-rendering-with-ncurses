@@ -345,7 +345,8 @@ int main () {
 	int cursor_y = 0;
 
 	//Init triangle
-	tri tris[2];
+	int num_tris = 2;
+	tri tris[num_tris];
 	
 	tris[0].a.x = 0.0;
 	tris[0].a.y = -0.5;
@@ -374,7 +375,7 @@ int main () {
 		int curr_tri;
 		output_char* screen_buffer = calloc (sizeof (output_char), max_x * max_y);
 		uint32_t* depth_buffer = calloc (sizeof (uint32_t), max_x * max_y);
-		for (curr_tri = 0; curr_tri < 2; curr_tri++) {
+		for (curr_tri = 0; curr_tri < num_tris; curr_tri++) {
 			//Transform triangle
 			tri t = tris[curr_tri];
 			v3 origs[3];
