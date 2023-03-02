@@ -5,6 +5,9 @@
 #include "rasterizer.h"
 #include "matrix.h"
 #include "tri.h"
+#include "color_mapping.h"
+
+palatte* terminal_palatte;
 
 void draw_line (int x1, int y1, int x2, int y2, int* line_raster_buffer, int width, int height) {
 
@@ -315,26 +318,10 @@ int main () {
 	
 	if (has_colors ()) {
 		start_color ();
-		int i;
-		int eighttable[8] = {0, 125, 250, 375, 500, 625, 750, 1000};
-		int fourtable[4] = {0, 333, 666, 1000};
-		for (i = 0; i < 255; i++) {
-			#ifdef COLOR_MODE_256
-			int r = eighttable[(i & 0xE0) >> 5];
-			int g = eighttable[(i & 0x1C) >> 2];
-		    	int b = fourtable[(i & 0x03) >> 0];
-			int index = i;
-			#else
-			int r = fourtable[(i & 0x60) >> 5];
-			int g = eighttable[(i & 0x1C) >> 2];
-			int b = fourtable[(i & 0x03) >> 0];
-			int index = i % 128 + 128;
-			#endif
-			init_color (index, r, g, b);
-			init_pair (index, i, 0);
-		}
-		init_color (255, 1000, 1000, 1000);
-		init_pair (255, 255, 255);
+		terminal_palatte = malloc (sizeof (palatte));
+		palatte_from_file (terminal_palatte, "xterm_palatte.txt");
+		palatte_use (terminal_palatte); //If being used on xterm, this line can be commented out entirely
+		init_color_pairs ();
 	} else {
 		endwin ();
 		exit (1);
@@ -420,20 +407,7 @@ int main () {
 				output_char curr = screen_buffer[wy * max_x + wx];
 				move (wy, wx);
 				if (curr.color) {
-					int r_8bit = (curr.color & 0xFF0000) >> 16;
-					int g_8bit = (curr.color & 0x00FF00) >> 8;
-					int b_8bit = (curr.color & 0x0000FF) >> 0;
-					#ifdef COLOR_MODE_256
-					int r = r_8bit / 32;
-					int g = g_8bit / 32;
-					int b = b_8bit / 64;
-					int color_index = (r << 5) + (g << 2) + b;
-					#else
-					int r = r_8bit / 64;
-					int g = g_8bit / 32;
-					int b = b_8bit / 64;
-					int color_index = (r << 5) + (g << 2) + b + 128;
-					#endif
+					int color_index = get_color_index (terminal_palatte, curr.color);
 					attron (COLOR_PAIR (color_index));
 					addch ('#');
 					attroff (COLOR_PAIR (color_index));
@@ -487,20 +461,7 @@ int main () {
 				move (old_cursor_y, old_cursor_x);
 				output_char curr = screen_buffer[old_cursor_y * max_x + old_cursor_x];
 				if (curr.color) {
-					int r_8bit = (curr.color & 0xFF0000) >> 16;
-					int g_8bit = (curr.color & 0x00FF00) >> 8;
-					int b_8bit = (curr.color & 0x0000FF) >> 0;
-					#ifdef COLOR_MODE_256
-					int r = r_8bit / 32;
-					int g = g_8bit / 32;
-					int b = b_8bit / 64;
-					int color_index = (r << 5) + (g << 2) + b;
-					#else
-					int r = r_8bit / 64;
-					int g = g_8bit / 32;
-					int b = b_8bit / 64;
-					int color_index = (r << 5) + (g << 2) + b + 128;
-					#endif
+					int color_index = get_color_index (terminal_palatte, curr.color);
 					attron (COLOR_PAIR (color_index));
 					addch ('#');
 					attroff (COLOR_PAIR (color_index));
@@ -508,9 +469,7 @@ int main () {
 					addch (' ');
 				}
 				move (cursor_y, cursor_x);
-				attron (COLOR_PAIR (255));
-				addch ('#');
-				attroff (COLOR_PAIR (255));
+				addch (' ');
 				//Print info
 				move (0, 0);
 				clrtoeol ();
@@ -521,19 +480,6 @@ int main () {
 			}
 		}
 	}
-
-
-	//Restore default pallate
-	#ifdef COLOR_MODE_256
-	init_color (COLOR_BLACK, 0, 0, 0);
-	init_color (COLOR_RED, 1000, 0, 0);
-	init_color (COLOR_GREEN, 0, 1000, 0);
-	init_color (COLOR_YELLOW, 1000, 1000, 0);
-	init_color (COLOR_BLUE, 0, 0, 1000);
-	init_color (COLOR_MAGENTA, 1000, 0, 1000);
-	init_color (COLOR_CYAN, 1000, 1000, 0);
-	init_color (COLOR_WHITE, 1000, 1000, 1000);
-	#endif
 
 	//Wait and end
 	getch ();
