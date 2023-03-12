@@ -319,8 +319,8 @@ int main () {
 	if (has_colors ()) {
 		start_color ();
 		terminal_palatte = malloc (sizeof (palatte));
-		palatte_from_file (terminal_palatte, "xterm_palatte.txt");
-		palatte_use (terminal_palatte); //If being used on xterm, this line can be commented out entirely
+		palatte_default_xterm_256 (terminal_palatte);
+		palatte_use (terminal_palatte);
 		init_color_pairs ();
 	} else {
 		endwin ();
@@ -407,7 +407,7 @@ int main () {
 				output_char curr = screen_buffer[wy * max_x + wx];
 				move (wy, wx);
 				if (curr.color) {
-					int color_index = get_color_index (terminal_palatte, curr.color);
+					int color_index = terminal_palatte->get_color_id (terminal_palatte, curr.color);
 					attron (COLOR_PAIR (color_index));
 					addch ('#');
 					attroff (COLOR_PAIR (color_index));

@@ -144,12 +144,46 @@ void* print_xterm_color_demo () {
 
 }
 
+
+uint8_t color_mapping_func_table (palatte* p, int color) {
+	int r = (color & 0xF00000) >> 12;
+	int g = (color & 0x00F000) >> 8;
+	int b = (color & 0x0000F0) >> 4;
+	return ((uint8_t*)p->palatte_data)[r | g | b];
+}
+
+uint8_t color_mapping_xterm_256_default (palatte* p, int color) {
+
+	//Note: for practical reasons, does not use system colors
+	int r = (color & 0xFF0000) >> 16;
+	int g = (color & 0x00FF00) >> 8;
+	int b = (color & 0x0000FF) >> 0;
+	if ((r == b) & (g == b)) {
+		//Color is gray
+		int shade = (int)((r / 256.0) * 26);
+		if (shade == 0) {
+			return 16; //xterm black is 16
+		} else if (shade == 25) {
+			return 231; //xterm white is 231
+		} else {
+			return 232 + shade - 1; //Grayscale ramp starts at 232
+		}
+	} else {
+		//Color is in rgb 
+		r = (int)((r / 256.0) * 6);
+		g = (int)((g / 256.0) * 6);
+		b = (int)((b / 256.0) * 6);
+		return 16 + r * 36 + g * 6 + b; //RGB cube starts at 16
+	}
+
+}
+
 void* palatte_print_LUT_RGB (palatte* lut) {
 	int wx, wy;
 	for (int cube = 0; cube < 16; cube++) {
 		for (wx = 0; wx < 16; wx++) {
 			for (wy = 0; wy < 16; wy++) {
-				int color = ((uint8_t*)lut->palatte_data)[cube * 256 + wy * 16 + wx];
+				int color = lut->get_color_id (lut, cube * 0x110000 + wy * 0x001100 + wx * 0x000011);
 				move ((cube / 8) * 17 + wy, (cube % 8) * 17 + wx);
 				attron (COLOR_PAIR (color));
 				addch (' ');
@@ -219,13 +253,24 @@ char* palatte_info_from_file (char palatte_name[32], v3** palatte, int* num_colo
 palatte* palatte_from_file (void* loc, char* filename) {
 	
 	//Load palatte from file
-	palatte* pLUT = (palatte*)loc;
-	palatte_info_from_file (pLUT->palatte_name, &(pLUT->palatte_colors), &(pLUT->num_colors), "xterm_palatte.txt");
+	palatte* p = (palatte*)loc;
+	palatte_info_from_file (p->palatte_name, &(p->palatte_colors), &(p->num_colors), "xterm_palatte.txt");
+	p->get_color_id = color_mapping_func_table;
+	p->flags = PALATTE_FLAG_HAS_COLOR_DATA | PALATTE_FLAG_HAS_LUT;
 
 	//Generate palatte table
-	palatte_autopopulate (pLUT, hsvdist);
-	return pLUT;
+	palatte_autopopulate (p, hsvdist);
+	return p;
 
+}
+
+palatte* palatte_default_xterm_256 (void* loc) {
+	palatte* p = (palatte*)loc;
+	strcpy (p->palatte_name, "XTERM_256");
+	p->num_colors = 256;
+	p->flags = PALATTE_FLAG_IS_XTERM_256;
+	p->get_color_id = color_mapping_xterm_256_default;
+	return p;
 }
 
 void palatte_autopopulate (palatte* palatte, float (*compare_func)(v3*, v3*)) {
@@ -273,19 +318,21 @@ uint8_t get_color_index (palatte* p, int color) {
 
 void palatte_use (palatte* p) {
 	//Load palatte colors
-	int start_color;
-	#ifndef USE_SYSTEM_COLORS
-	start_color = 16;
-	#else
-	start_color = 0;
-	#endif
-	int i;
-	for (i = start_color; i < 256; i++) {
-		v3 c = p->palatte_colors[i];
-		int r = (int)(c.x * 1000);
-		int g = (int)(c.y * 1000);
-		int b = (int)(c.z * 1000);
-		init_color (i, r, g, b);
+	if (p->flags & PALATTE_FLAG_HAS_COLOR_DATA) {
+		int start_color;
+		if (p->flags & PALATTE_FLAG_USES_SYSTEM_COLORS) {
+			start_color = 0;
+		} else {
+			start_color = 16;
+		}
+		int i;
+		for (i = start_color; i < p->num_colors; i++) {
+			v3 c = p->palatte_colors[i];
+			int r = (int)(c.x * 1000);
+			int g = (int)(c.y * 1000);
+			int b = (int)(c.z * 1000);
+			init_color (i, r, g, b);
+		}
 	}
 }
 
@@ -296,25 +343,16 @@ void init_color_pairs () {
 	}
 }
 
-void display_color_map () {
-	
-	//THIS IS A DEBUG FUNCTION
-	palatte pLUT; 
-	palatte_from_file (&pLUT, "xterm_palatte.txt");
-	if (has_colors ()) {
-		start_color ();
-		palatte_use (&pLUT);
-		init_color_pairs ();
-	} else {
-		endwin ();
-		exit (1);
+void init_color_pairs_solid () {
+	int i;
+	for (i = 0; i < 256; i++) {
+		init_pair (i, i, i);
 	}
-	
-	palatte_print_LUT_RGB (&pLUT);
-	//print_xterm_color_demo ();
+}
 
+void display_color_map (palatte* p) {
+	init_color_pairs_solid ();
+	palatte_print_LUT_RGB (p);
 	getch ();
-	endwin ();
-	exit (0);
-	
+	init_color_pairs ();
 }
