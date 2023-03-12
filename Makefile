@@ -1,10 +1,10 @@
 rasterizer: rasterizer.c vector matrix tri color_mapping
-	gcc rasterizer.c vector.o matrix.o tri.o color_mapping.o -lncurses -lm
+	gcc -g rasterizer.c vector.o matrix.o tri.o color_mapping.o -lncurses -lm
 vector: vector.c vector.h
-	gcc -c vector.c
+	gcc -c -g vector.c
 matrix: matrix.c matrix.h
-	gcc -c matrix.c
+	gcc -c -g matrix.c
 tri: tri.c tri.h
-	gcc -c tri.c
+	gcc -c -g tri.c
 color_mapping: color_mapping.c color_mapping.h
-	gcc -c color_mapping.c
+	gcc -c -g color_mapping.c

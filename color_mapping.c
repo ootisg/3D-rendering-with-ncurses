@@ -149,7 +149,7 @@ void* palatte_print_LUT_RGB (palatte* lut) {
 	for (int cube = 0; cube < 16; cube++) {
 		for (wx = 0; wx < 16; wx++) {
 			for (wy = 0; wy < 16; wy++) {
-				int color = lut->color_LUT[cube * 256 + wy * 16 + wx];
+				int color = ((uint8_t*)lut->palatte_data)[cube * 256 + wy * 16 + wx];
 				move ((cube / 8) * 17 + wy, (cube % 8) * 17 + wx);
 				attron (COLOR_PAIR (color));
 				addch (' ');
@@ -159,7 +159,7 @@ void* palatte_print_LUT_RGB (palatte* lut) {
 	}
 }
 
-char* palatte_info_from_file (char palatte_name[32], v3 palatte[256], char* filename) {
+char* palatte_info_from_file (char palatte_name[32], v3** palatte, int* num_colors, char* filename) {
 
 	//Open the file and read the palatte name
 	FILE* f = fopen (filename, "r");
@@ -173,7 +173,13 @@ char* palatte_info_from_file (char palatte_name[32], v3 palatte[256], char* file
 		return NULL;
 	}
 	int pname_len = strlen (palatte_name);
-	
+	char num_buf[32];
+	status = fgets (num_buf, 32, f);
+	if (status == NULL) {
+		//Return NULL if file only contains one line
+		return NULL;
+	}
+	*num_colors = atoi (num_buf);
 	//Trim the newline off the end of the palatte name (with \r\n case for windows compatibility)
 	if (palatte_name[pname_len - 2] == '\r' && palatte_name[pname_len - 1] == '\n') {
 		palatte_name[pname_len - 2] = '\0';	
@@ -181,12 +187,15 @@ char* palatte_info_from_file (char palatte_name[32], v3 palatte[256], char* file
 		palatte_name[pname_len - 1] = '\0';
 	}
 
+	//Allocate the palatte colors
+	*palatte = malloc (sizeof (v3) * (*num_colors));
+
 	//Read the list of hex colors
 	char buf[32];
 	char* endchar = (char*)buf + 6;
 	char** endptr = &endchar;
 	int i;
-	for (i = 0; i < 256; i++) {
+	for (i = 0; i < *num_colors; i++) {
 		char* status = fgets (buf, 32, f);
 		if (status != NULL) {
 			long int numval;
@@ -194,7 +203,7 @@ char* palatte_info_from_file (char palatte_name[32], v3 palatte[256], char* file
 			float r = ((numval & 0xFF0000) >> 16) / 255.0;
 			float g = ((numval & 0x00FF00) >> 8) / 255.0;
 			float b = ((numval & 0x0000FF) >> 0) / 255.0;
-			initv3 (&(palatte[i]), r, g, b);
+			initv3 ((*palatte) + i, r, g, b);
 		} else {
 			exit(0);
 			//TODO end of stream error handling
@@ -211,15 +220,15 @@ palatte* palatte_from_file (void* loc, char* filename) {
 	
 	//Load palatte from file
 	palatte* pLUT = (palatte*)loc;
-	palatte_info_from_file (pLUT->palatte_name, pLUT->palatte_colors, "xterm_palatte.txt");
+	palatte_info_from_file (pLUT->palatte_name, &(pLUT->palatte_colors), &(pLUT->num_colors), "xterm_palatte.txt");
 
 	//Generate palatte table
-	palatte_autopopulate (pLUT, 256, hsvdist);
+	palatte_autopopulate (pLUT, hsvdist);
 	return pLUT;
 
 }
 
-void palatte_autopopulate (palatte* palatte, int num_colors, float (*compare_func)(v3*, v3*)) {
+void palatte_autopopulate (palatte* palatte, float (*compare_func)(v3*, v3*)) {
 	
 	//Ignore the first 16 colors if not using system colors
 	int start_color;
@@ -230,6 +239,8 @@ void palatte_autopopulate (palatte* palatte, int num_colors, float (*compare_fun
 	#endif
 
 	//Construct the table
+	int num_colors = palatte->num_colors;
+	palatte->palatte_data = malloc (sizeof (uint8_t) * 4096);
 	v3* color_palatte = palatte->palatte_colors;
 	int i, j;
 	for (i = 0; i < 4096; i++) {
@@ -248,7 +259,7 @@ void palatte_autopopulate (palatte* palatte, int num_colors, float (*compare_fun
 				smallest_idx = j;
 			}
 		}
-		palatte->color_LUT[i] = (uint8_t)smallest_idx;
+		((uint8_t*)(palatte->palatte_data))[i] = (uint8_t)smallest_idx;
 	}
 
 }
@@ -257,7 +268,7 @@ uint8_t get_color_index (palatte* p, int color) {
 	int r = (color & 0xFF0000) >> 20;
 	int g = (color & 0x00FF00) >> 12;
 	int b = (color & 0x0000FF) >> 4;
-	return p->color_LUT[(r << 8) + (g << 4) + b];
+	return ((uint8_t*)p->palatte_data)[(r << 8) + (g << 4) + b];
 }
 
 void palatte_use (palatte* p) {

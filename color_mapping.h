@@ -7,8 +7,10 @@
 
 struct palatte {
 	char palatte_name[32];
-	v3 palatte_colors[256];
-	uint8_t color_LUT[4096];
+	v3* palatte_colors;
+	int num_colors;
+	void* palatte_data;
+	int (*get_color_id)(struct palatte* p, v3* color);
 };
 
 typedef struct palatte palatte;
@@ -17,8 +19,8 @@ void display_color_map ();
 
 void* print_xterm_color_demo ();
 void* palatte_print_LUT_RGB (palatte* lut);
-char* palatte_info_from_file (char palatte_name[32], v3 palatte[256], char* filename);
-void palatte_autopopulate (palatte* palatte, int num_colors, float (*compare_func)(v3*, v3*));
+char* palatte_info_from_file (char palatte_name[32], v3** palatte, int* num_colors, char* filename);
+void palatte_autopopulate (palatte* palatte, float (*compare_func)(v3*, v3*));
 palatte* palatte_from_file (void* loc, char* filename);
 void palatte_use (palatte* p);
 void init_color_pairs ();
