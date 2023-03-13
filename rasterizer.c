@@ -319,13 +319,16 @@ int main () {
 	if (has_colors ()) {
 		start_color ();
 		terminal_palatte = malloc (sizeof (palatte));
-		palatte_default_xterm_256 (terminal_palatte);
+		palatte_hsv_60hue (terminal_palatte);
+		//palatte_default_xterm_256 (terminal_palatte);
 		palatte_use (terminal_palatte);
 		init_color_pairs ();
 	} else {
 		endwin ();
 		exit (1);
 	}
+	
+	display_color_map (terminal_palatte);
 
 	//Init cursor
 	int cursor_x = 0;

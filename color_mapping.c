@@ -178,6 +178,30 @@ uint8_t color_mapping_xterm_256_default (palatte* p, int color) {
 
 }
 
+uint8_t color_mapping_hsv60 (palatte* p, int color) {
+
+	int r = (color & 0xFF0000) >> 16;
+	int g = (color & 0x00FF00) >> 8;
+	int b = (color & 0x0000FF) >> 0;
+	if ((r == b) & (g == b)) {
+		//Color is gray
+		int shade = (int)((r / 256.0) * 30);
+		return 226 + shade;
+	} else {
+		v3 rgb, hsv;
+		initv3 (&rgb, r / 255.0, g / 255.0, b / 255.0);
+		RGB_to_HSV (&hsv, &rgb);
+		int hue = (int)(hsv.x * 60);
+		int saturation = 3 - (int)ceil (hsv.y * 3);
+		if (saturation == 3) {
+			return 196 + hue / 2;
+		} else {
+			return 16 + saturation * 60 + hue;
+		}
+	}
+
+}
+
 void* palatte_print_LUT_RGB (palatte* lut) {
 	int wx, wy;
 	for (int cube = 0; cube < 16; cube++) {
@@ -271,6 +295,36 @@ palatte* palatte_default_xterm_256 (void* loc) {
 	p->flags = PALATTE_FLAG_IS_XTERM_256;
 	p->get_color_id = color_mapping_xterm_256_default;
 	return p;
+}
+
+palatte* palatte_hsv_60hue (void* loc) {
+	
+	//Setup the palatte
+	palatte* p = (palatte*)loc;
+	strcpy (p->palatte_name, "HSV60_256");
+	p->num_colors = 256;
+	p->palatte_colors = malloc (sizeof (v3) * 256);
+	p->flags = PALATTE_FLAG_HAS_COLOR_DATA;
+	p->get_color_id = color_mapping_hsv60;
+
+	//Generate palatte colors
+	v3 hsv, rgb;
+	int i;
+	for (i = 0; i < 240; i++) {
+		if (i < 180) {
+			initv3 (&hsv, (i % 60) / 60.0, (4 - i / 60) / 5.0, 1.0); //60 hue values, 4 saturation values
+		} else if (i < 210) {
+			initv3 (&hsv, (i % 30) / 30.0, 0.2, 1.0); //Reduced hue resolution at lowest saturation to make room for grays
+		} else {
+			initv3 (&hsv, 0, 0, (i - 210) / 29.0); //High-resolution grayscale
+		}
+		HSV_to_RGB (&rgb, &hsv);
+		p->palatte_colors[i + 16] = rgb;
+	}
+	
+	//Return the palatte
+	return p;
+
 }
 
 void palatte_autopopulate (palatte* palatte, float (*compare_func)(v3*, v3*)) {

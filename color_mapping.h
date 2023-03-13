@@ -35,5 +35,6 @@ uint8_t get_color_index (palatte* p, int color);
 
 palatte* palatte_from_file (void* loc, char* filename);
 palatte* palatte_default_xterm_256 (void* loc);
+palatte* palatte_hsv_60hue (void* loc);
 
 #endif
